@@ -1,32 +1,32 @@
 package ru.netology;
 
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStreamReader;
+import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class Server {
-    private final int port;
     private final ExecutorService threadPool;
-    private final List<String> validPaths;
+    private final Map<String, Map<String, Handler>> handlers;
 
-    public Server(int port, List<String> validPaths) {
-        this.port = port;
-        this.validPaths = validPaths;
+    public Server() {
         this.threadPool = Executors.newFixedThreadPool(64);
+        this.handlers = new ConcurrentHashMap<>();
     }
 
-    public void start() {
+    public void addHandler(String method, String path, Handler handler) {
+        handlers.computeIfAbsent(method, k -> new ConcurrentHashMap<>())
+                .put(path, handler);
+    }
+
+    public void listen(int port) {
         try (ServerSocket serverSocket = new ServerSocket(port)) {
-            while (true) {
+            while (!serverSocket.isClosed()) {
                 try {
                     Socket socket = serverSocket.accept();
                     threadPool.execute(() -> handleConnection(socket));
@@ -42,71 +42,49 @@ public class Server {
     }
 
     private void handleConnection(Socket socket) {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream())) {
+        try (socket;
+             InputStream input = socket.getInputStream();
+             BufferedOutputStream output = new BufferedOutputStream(socket.getOutputStream())) {
 
-            String requestLine = in.readLine();
-            if (requestLine == null) return;
-
-            String[] parts = requestLine.split(" ");
-            if (parts.length != 3) return;
-
-            String path = parts[1];
-            if (!validPaths.contains(path)) {
-                sendNotFoundResponse(out);
+            Request request = Request.fromInputStream(input);
+            if (request == null) {
+                sendBadRequestResponse(output);
                 return;
             }
 
-            Path filePath = Path.of(".", "public", path);
-            if (path.equals("/classic.html")) {
-                handleClassicHtml(filePath, out);
+            Handler handler = findHandler(request.getMethod(), request.getPath());
+            if (handler != null) {
+                handler.handle(request, output);
             } else {
-                handleStaticFile(filePath, out);
+                sendNotFoundResponse(output);
             }
         } catch (IOException e) {
             System.err.println("Connection error: " + e.getMessage());
         }
     }
 
-    private void handleStaticFile(Path filePath, BufferedOutputStream out) throws IOException {
-        String mimeType = Files.probeContentType(filePath);
-        long length = Files.size(filePath);
+    private Handler findHandler(String method, String path) {
+        Map<String, Handler> methodHandlers = handlers.get(method);
+        return methodHandlers != null ? methodHandlers.get(path) : null;
+    }
 
-        out.write((
-                "HTTP/1.1 200 OK\r\n" +
-                        "Content-Type: " + mimeType + "\r\n" +
-                        "Content-Length: " + length + "\r\n" +
+    private void sendBadRequestResponse(BufferedOutputStream output) throws IOException {
+        output.write((
+                "HTTP/1.1 400 Bad Request\r\n" +
+                        "Content-Length: 0\r\n" +
                         "Connection: close\r\n" +
                         "\r\n"
         ).getBytes());
-
-        Files.copy(filePath, out);
-        out.flush();
+        output.flush();
     }
 
-    private void handleClassicHtml(Path filePath, BufferedOutputStream out) throws IOException {
-        String template = Files.readString(filePath);
-        byte[] content = template.replace("{time}", LocalDateTime.now().toString()).getBytes();
-
-        out.write((
-                "HTTP/1.1 200 OK\r\n" +
-                        "Content-Type: " + Files.probeContentType(filePath) + "\r\n" +
-                        "Content-Length: " + content.length + "\r\n" +
-                        "Connection: close\r\n" +
-                        "\r\n"
-        ).getBytes());
-
-        out.write(content);
-        out.flush();
-    }
-
-    private void sendNotFoundResponse(BufferedOutputStream out) throws IOException {
-        out.write((
+    private void sendNotFoundResponse(BufferedOutputStream output) throws IOException {
+        output.write((
                 "HTTP/1.1 404 Not Found\r\n" +
                         "Content-Length: 0\r\n" +
                         "Connection: close\r\n" +
                         "\r\n"
         ).getBytes());
-        out.flush();
+        output.flush();
     }
 }
