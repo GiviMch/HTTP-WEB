@@ -2,60 +2,54 @@ package ru.netology;
 
 import java.io.BufferedOutputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
+import java.nio.charset.StandardCharsets;
 
 public class Main {
   public static void main(String[] args) {
     final var server = new Server();
 
-    // Обработчик для GET /messages
-    server.addHandler("GET", "/messages", (request, responseStream) -> {
-      String response = "GET messages handler response";
-      responseStream.write((
-              "HTTP/1.1 200 OK\r\n" +
-                      "Content-Type: text/plain\r\n" +
-                      "Content-Length: " + response.length() + "\r\n" +
-                      "Connection: close\r\n" +
-                      "\r\n" +
-                      response
-      ).getBytes());
-      responseStream.flush();
-    });
+    // Обработчик для /test
+    server.addHandler("GET", "/test", (request, responseStream) -> {
+      String param1 = request.getQueryParam("param1");
+      String param2 = request.getQueryParam("param2");
 
-    // Обработчик для POST /messages
-    server.addHandler("POST", "/messages", (request, responseStream) -> {
-      System.out.println("Received message: " + request.getBody());
+      String response = "Получены параметры: param1=" + param1 + ", param2=" + param2;
+      byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
+
       responseStream.write((
               "HTTP/1.1 200 OK\r\n" +
-                      "Content-Type: text/plain\r\n" +
-                      "Content-Length: 0\r\n" +
+                      "Content-Type: text/plain; charset=utf-8\r\n" +
+                      "Content-Length: " + responseBytes.length + "\r\n" +
                       "Connection: close\r\n" +
                       "\r\n"
       ).getBytes());
+      responseStream.write(responseBytes);
       responseStream.flush();
     });
 
-    // Обработчик для GET /classic.html (пример из предыдущей задачи)
+    // Обработчик для classic.html
     server.addHandler("GET", "/classic.html", (request, responseStream) -> {
-      try {
-        Path filePath = Path.of(".", "public", "classic.html");
-        String template = Files.readString(filePath);
-        byte[] content = template.replace("{time}", LocalDateTime.now().toString()).getBytes();
+      String htmlContent = "<!doctype html>\n" +
+              "<html lang=\"en\">\n" +
+              "<head><meta charset=\"UTF-8\"></head>\n" +
+              "<body>\n" +
+              "<h1>Classic Demo</h1>\n" +
+              "<p>Current time is: " + LocalDateTime.now() + "</p>\n" +
+              "</body>\n" +
+              "</html>";
 
-        responseStream.write((
-                "HTTP/1.1 200 OK\r\n" +
-                        "Content-Type: text/html\r\n" +
-                        "Content-Length: " + content.length + "\r\n" +
-                        "Connection: close\r\n" +
-                        "\r\n"
-        ).getBytes());
-        responseStream.write(content);
-        responseStream.flush();
-      } catch (IOException e) {
-        e.printStackTrace();
-      }
+      byte[] content = htmlContent.getBytes(StandardCharsets.UTF_8);
+      responseStream.write((
+              "HTTP/1.1 200 OK\r\n" +
+                      "Content-Type: text/html; charset=utf-8\r\n" +
+                      "Content-Length: " + content.length + "\r\n" +
+                      "Connection: close\r\n" +
+                      "\r\n"
+      ).getBytes());
+      responseStream.write(content);
+      responseStream.flush();
     });
 
     server.listen(9999);

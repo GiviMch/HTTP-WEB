@@ -1,10 +1,18 @@
 package ru.netology;
 
+import org.apache.http.NameValuePair;
+import org.apache.http.client.utils.URLEncodedUtils;
+
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.nio.charset.StandardCharsets;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 public class Request {
@@ -12,15 +20,36 @@ public class Request {
     private final String path;
     private final Map<String, String> headers;
     private final String body;
+    private final String cleanPath;
+    private final List<NameValuePair> queryParams;
 
-    public Request(String method, String path, Map<String, String> headers, String body) {
+    public Request(String method, String path, Map<String, String> headers, String body)
+            throws URISyntaxException {
         this.method = method;
         this.path = path;
         this.headers = headers;
         this.body = body;
+
+        URI uri = new URI("http://localhost" + path);
+        this.cleanPath = uri.getPath();
+        this.queryParams = URLEncodedUtils.parse(uri, StandardCharsets.UTF_8);
     }
 
-    public static Request fromInputStream(InputStream inputStream) throws IOException {
+    public String getQueryParam(String name) {
+        return queryParams.stream()
+                .filter(param -> param.getName().equals(name))
+                .map(NameValuePair::getValue)
+                .findFirst()
+                .orElse(null);
+    }
+
+    public List<NameValuePair> getQueryParams() {
+        return Collections.unmodifiableList(queryParams);
+    }
+
+
+
+    public static Request fromInputStream(InputStream inputStream) throws IOException, URISyntaxException {
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream));
 
         // Read request line
@@ -61,6 +90,10 @@ public class Request {
     }
 
     public String getPath() {
+        return cleanPath;
+    }
+
+    public String getFullPath() {
         return path;
     }
 
